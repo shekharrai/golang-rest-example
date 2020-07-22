@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 )
 
 type Message struct {
@@ -12,12 +11,9 @@ type Message struct {
 	Value string `json:"value, omitempty"`
 }
 
-func (h *Message) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte(h.Key))
-}
-
 func main() {
 
+	marshal()
 	unmarshal()
 
 }
@@ -47,14 +43,4 @@ func unmarshal() {
 	}
 	fmt.Println(message.Key)
 	fmt.Println(message.Value)
-}
-
-func handleHttp() {
-	http.Handle("/hello", &Message{Key: "Hello Value"})
-
-	http.HandleFunc("/world", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Simple Value!!"))
-	})
-
-	http.ListenAndServe(":4400", nil)
 }
