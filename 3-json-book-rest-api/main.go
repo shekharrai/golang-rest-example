@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Book struct {
@@ -35,111 +37,111 @@ func init() {
 	}
 }
 
-func booksHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
+func booksHandler(writer http.ResponseWriter, request *http.Request) {
+	switch request.Method {
 	case http.MethodGet:
-		getAllBooks(w)
+		getAllBooks(writer)
 		return
 
 	case http.MethodPost:
-		saveBook(w, r)
+		saveBook(writer, request)
 		return
 	}
 }
 
-func bookHandler(w http.ResponseWriter, r *http.Request) {
-	pathSegments := strings.Split(r.URL.Path, "books/")
+func bookHandler(writer http.ResponseWriter, request *http.Request) {
+	pathSegments := strings.Split(request.URL.Path, "books/")
 	bookId, err := strconv.Atoi(pathSegments[len(pathSegments)-1])
 
 	if err != nil {
-		w.WriteHeader(http.StatusNotFound)
+		writer.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	book, bookIndex := retrieveBook(bookId)
 
 	if book == nil {
-		w.WriteHeader(http.StatusNotFound)
+		writer.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	switch r.Method {
+	switch request.Method {
 	case http.MethodGet:
-		getByBookId(w, book)
+		getByBookId(writer, book)
 		return
 
 	case http.MethodPut:
-		updateBookById(w, r, bookId, bookIndex)
+		updateBookById(writer, request, bookId, bookIndex)
 		return
 
 	case http.MethodDelete:
 		books = append(books[:bookIndex], books[bookIndex+1:]...)
-		w.WriteHeader(http.StatusOK)
+		writer.WriteHeader(http.StatusOK)
 		return
 
 	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 }
 
-func updateBookById(w http.ResponseWriter, r *http.Request, bookId int, bookIndex int) {
-	bookByte, err := ioutil.ReadAll(r.Body)
+func updateBookById(writer http.ResponseWriter, request *http.Request, bookId int, bookIndex int) {
+	bookByte, err := ioutil.ReadAll(request.Body)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	var updateBook Book
 	err = json.Unmarshal(bookByte, &updateBook)
 
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	updateBook.Id = bookId
 	books[bookIndex] = updateBook
-	w.WriteHeader(http.StatusOK)
+	writer.WriteHeader(http.StatusOK)
 }
 
-func getByBookId(w http.ResponseWriter, book *Book) {
+func getByBookId(writer http.ResponseWriter, book *Book) {
 	bookJson, err := json.Marshal(book)
 
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Add("Content-Type", "application/json")
-	w.Write(bookJson)
-	w.WriteHeader(http.StatusOK)
+	writer.Header().Add("Content-Type", "application/json")
+	writer.Write(bookJson)
+	writer.WriteHeader(http.StatusOK)
 }
 
-func getAllBooks(w http.ResponseWriter) {
+func getAllBooks(writer http.ResponseWriter) {
 	booksJson, err := json.Marshal(books)
 
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(booksJson)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.Write(booksJson)
 }
 
-func saveBook(w http.ResponseWriter, r *http.Request) {
+func saveBook(writer http.ResponseWriter, request *http.Request) {
 
 	var newBook Book
-	bookBytes, err := ioutil.ReadAll(r.Body)
+	bookBytes, err := ioutil.ReadAll(request.Body)
 
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	err = json.Unmarshal(bookBytes, &newBook)
 
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
@@ -147,7 +149,7 @@ func saveBook(w http.ResponseWriter, r *http.Request) {
 
 	books = append(books, newBook)
 
-	w.WriteHeader(http.StatusCreated)
+	writer.WriteHeader(http.StatusCreated)
 }
 
 func retrieveBook(bookId int) (*Book, int) {
@@ -170,8 +172,20 @@ func getNextId() int {
 	return highestId + 1
 }
 
+func logMiddlewareHandler(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		start := time.Now()
+		handler.ServeHTTP(writer, request)
+		fmt.Printf("Log Middleware timeout: %s", time.Since(start))
+	})
+}
+
 func main() {
-	http.HandleFunc("/books", booksHandler)
-	http.HandleFunc("/books/", bookHandler)
+
+	bookListHandler := http.HandlerFunc(booksHandler)
+	bookItemHandler := http.HandlerFunc(bookHandler)
+
+	http.Handle("/books", logMiddlewareHandler(bookListHandler))
+	http.Handle("/books/", logMiddlewareHandler(bookItemHandler))
 	http.ListenAndServe(":4400", nil)
 }
